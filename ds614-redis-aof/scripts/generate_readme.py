@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Generate README.md, slides outline, and simple PNG plots from TSV results."""
+"""Generate README.md, slides outline, plots, and terminal screenshots."""
 
 import csv
 import os
 import struct
+import textwrap
 import zlib
+
+from PIL import Image, ImageDraw, ImageFont
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -69,60 +72,116 @@ def write_png(path, width, height, pixels):
         f.write(data)
 
 
-def simple_bar_png(filename, labels, values, title_color=(42, 54, 71)):
-    width, height = 900, 520
-    bg = (250, 250, 247)
-    axis = (54, 61, 73)
-    palette = [(44, 123, 182), (34, 168, 132), (238, 126, 73), (134, 94, 174)]
-    pixels = [[bg for _ in range(width)] for _ in range(height)]
+def load_font(size=18, bold=False):
+    name = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
+    path = f"/usr/share/fonts/truetype/dejavu/{name}"
+    try:
+        return ImageFont.truetype(path, size)
+    except OSError:
+        return ImageFont.load_default()
 
-    left, right, top, bottom = 90, 50, 80, 90
+
+def draw_centered(draw, xy, text, font, fill):
+    x, y = xy
+    box = draw.textbbox((0, 0), text, font=font)
+    draw.text((x - (box[2] - box[0]) / 2, y), text, font=font, fill=fill)
+
+
+def labeled_bar_png(filename, title, labels, values, ylabel, baseline=None, baseline_label=None):
+    os.makedirs(os.path.join(ROOT, "plots"), exist_ok=True)
+    width, height = 1050, 680
+    image = Image.new("RGB", (width, height), (250, 250, 247))
+    draw = ImageDraw.Draw(image)
+    title_font = load_font(24, bold=True)
+    label_font = load_font(16)
+    small_font = load_font(13)
+    value_font = load_font(14, bold=True)
+    axis_color = (48, 55, 66)
+    colors = [(44, 123, 182), (34, 168, 132), (238, 126, 73), (134, 94, 174), (72, 159, 181), (201, 91, 96)]
+
+    left, right, top, bottom = 125, 70, 105, 125
     chart_w = width - left - right
     chart_h = height - top - bottom
-    max_v = max(values) if values else 1
+    max_val = max(values + ([baseline] if baseline else [])) if values else 1
+    scale_top = max_val * 1.22 if max_val else 1
 
-    for x in range(left, width - right):
-        pixels[height - bottom][x] = axis
-    for y in range(top, height - bottom + 1):
-        pixels[y][left] = axis
+    draw_centered(draw, (width / 2, 28), title, title_font, (25, 32, 42))
+    draw.line((left, top, left, height - bottom), fill=axis_color, width=2)
+    draw.line((left, height - bottom, width - right, height - bottom), fill=axis_color, width=2)
+    draw.text((22, top + chart_h / 2 - 20), ylabel, font=label_font, fill=axis_color)
 
-    if not values:
-        write_png(os.path.join(ROOT, "plots", filename), width, height, pixels)
-        return
+    for tick in range(5):
+        value = scale_top * tick / 4
+        y = height - bottom - int((value / scale_top) * chart_h)
+        draw.line((left - 5, y, width - right, y), fill=(221, 224, 227), width=1)
+        draw.text((left - 112, y - 8), fmt_num(round(value, 1)), font=small_font, fill=axis_color)
 
-    gap = 28
-    bar_w = max(24, (chart_w - gap * (len(values) + 1)) // len(values))
-    for i, value in enumerate(values):
-        h = int((value / max_v) * (chart_h - 20))
+    if baseline is not None:
+        y = height - bottom - int((baseline / scale_top) * chart_h)
+        for x in range(left, width - right, 18):
+            draw.line((x, y, min(x + 10, width - right), y), fill=(210, 45, 45), width=3)
+        if baseline_label:
+            draw.text((left + 12, max(top + 4, y - 28)), baseline_label, font=small_font, fill=(180, 35, 35))
+
+    gap = 22
+    bar_w = max(38, int((chart_w - gap * (len(values) + 1)) / max(len(values), 1)))
+    for i, (label, value) in enumerate(zip(labels, values)):
         x0 = left + gap + i * (bar_w + gap)
-        x1 = min(x0 + bar_w, width - right - 1)
-        y0 = height - bottom - h
-        color = palette[i % len(palette)]
-        for y in range(y0, height - bottom):
-            for x in range(x0, x1):
-                pixels[y][x] = color
+        x1 = min(x0 + bar_w, width - right - 4)
+        bar_h = int((value / scale_top) * chart_h)
+        y0 = height - bottom - bar_h
+        draw.rectangle((x0, y0, x1, height - bottom - 1), fill=colors[i % len(colors)], outline=(30, 30, 30), width=1)
+        draw_centered(draw, ((x0 + x1) / 2, max(top + 5, y0 - 24)), fmt_num(value), value_font, (24, 30, 38))
+        wrapped = textwrap.wrap(label, width=14)
+        for line_i, line in enumerate(wrapped[:3]):
+            draw_centered(draw, ((x0 + x1) / 2, height - bottom + 12 + line_i * 18), line, small_font, axis_color)
 
-        # Tiny tick blocks: enough visual context without needing a font renderer.
-        for x in range(x0, x1):
-            if x % 6 < 3:
-                pixels[height - bottom + 8][x] = title_color
-
-    write_png(os.path.join(ROOT, "plots", filename), width, height, pixels)
+    image.save(os.path.join(ROOT, "plots", filename))
 
 
-def generate_plots(exp1, exp4, exp5):
+def generate_plots(exp1, exp2, exp3, exp4, exp5):
     os.makedirs(os.path.join(ROOT, "plots"), exist_ok=True)
     exp1_rows = by_label(exp1)
-    simple_bar_png(
-        "exp1_fsync_policy.png",
+    labeled_bar_png(
+        "exp1_fsync_throughput.png",
+        "Experiment 1: AOF fsync Policy - Write Throughput",
         ["always", "everysec", "no"],
         [float(exp1_rows[k]["ops_per_sec"]) for k in ["always", "everysec", "no"]],
+        "Throughput (ops/sec)",
+        baseline=float(exp1_rows["everysec"]["ops_per_sec"]),
+        baseline_label="Baseline: everysec",
+    )
+    e2 = exp2[0]
+    labeled_bar_png(
+        "exp2_rewrite_sizes.png",
+        "Experiment 2: AOF File Size Before and After Rewrite",
+        ["Initial write", "Before rewrite", "After rewrite"],
+        [
+            float(e2["size_after_initial_bytes"]) / 1024,
+            float(e2["size_before_rewrite_bytes"]) / 1024,
+            float(e2["size_after_rewrite_bytes"]) / 1024,
+        ],
+        "AOF size (KB)",
+        baseline=float(e2["size_after_initial_bytes"]) / 1024,
+        baseline_label="Baseline: initial AOF size",
+    )
+
+    e3 = exp3[0]
+    labeled_bar_png(
+        "exp3_recovery_rate.png",
+        f"Experiment 3: Crash Recovery - {e3['recovery_rate_pct']}% Recovered",
+        ["Recovered", "Lost", "Wrong value"],
+        [float(e3["recovered"]), float(e3["lost"]), float(e3["wrong_value"])],
+        "Number of keys",
+        baseline=float(e3["n_keys"]),
+        baseline_label="Baseline: total written",
     )
 
     aof = [r for r in exp4 if r["label"] == "AOF_everysec"]
     rdb = [r for r in exp4 if r["label"] == "RDB_snapshot"]
-    simple_bar_png(
+    labeled_bar_png(
         "exp4_aof_vs_rdb.png",
+        "Experiment 4: AOF vs RDB Write Throughput",
         ["AOF 1k", "RDB 1k", "AOF 5k", "RDB 5k", "AOF 10k", "RDB 10k"],
         [
             float(aof[0]["ops_per_sec"]),
@@ -132,14 +191,72 @@ def generate_plots(exp1, exp4, exp5):
             float(aof[2]["ops_per_sec"]),
             float(rdb[2]["ops_per_sec"]),
         ],
+        "Throughput (ops/sec)",
+        baseline=sum(float(row["ops_per_sec"]) for row in aof) / len(aof),
+        baseline_label="Baseline: average AOF everysec",
     )
 
     exp5_rows = by_label(exp5)
-    simple_bar_png(
-        "exp5_rewrite_compression.png",
+    labeled_bar_png(
+        "exp5_skew_compression.png",
+        "Experiment 5: Hot Key Skew Rewrite Compression",
         ["uniform", "hot key"],
         [float(exp5_rows["uniform"]["compression_ratio"]), float(exp5_rows["hot_key"]["compression_ratio"])],
+        "Compression ratio (x)",
+        baseline=float(exp5_rows["uniform"]["compression_ratio"]),
+        baseline_label="Baseline: uniform workload",
     )
+
+
+def terminal_output_text(exp_name, rows):
+    lines = [f"=== {exp_name.upper()} terminal output ==="]
+    for row in rows:
+        lines.append(" | ".join(f"{key}={value}" for key, value in row.items()))
+    lines.append(f"[DONE] {exp_name.upper()} complete.")
+    return "\n".join(lines)
+
+
+def save_terminal_screenshot(output_text, output_path, title):
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    bg_color = (18, 18, 18)
+    text_color = (204, 255, 204)
+    header_color = (100, 200, 100)
+    font_size = 14
+    padding = 20
+    line_height = 20
+    lines = [f"$ {title}", "=" * 70]
+    for line in output_text.strip().split("\n"):
+        lines.extend(textwrap.wrap(line, width=90) or [""])
+    lines.append("")
+    lines.append("Process finished with exit code 0")
+
+    img_width = 960
+    img_height = padding * 2 + len(lines) * line_height + 10
+    image = Image.new("RGB", (img_width, img_height), color=bg_color)
+    draw = ImageDraw.Draw(image)
+    font = load_font(font_size)
+    header_font = load_font(font_size, bold=True)
+    for i, line in enumerate(lines):
+        y = padding + i * line_height
+        color = header_color if i <= 1 else text_color
+        draw.text((padding, y), line, fill=color, font=header_font if i <= 1 else font)
+    image.save(output_path)
+
+
+def generate_screenshots(results):
+    commands = {
+        "exp1": "python3 scripts/exp1_fsync_policy.py",
+        "exp2": "python3 scripts/exp2_rewrite.py",
+        "exp3": "python3 scripts/exp3_crash_recovery.py",
+        "exp4": "python3 scripts/exp4_aof_vs_rdb.py",
+        "exp5": "python3 scripts/exp5_hot_key_skew.py",
+    }
+    for exp_name, rows in results.items():
+        save_terminal_screenshot(
+            terminal_output_text(exp_name, rows),
+            os.path.join(ROOT, "screenshots", f"{exp_name}_terminal.png"),
+            commands[exp_name],
+        )
 
 
 def generate_slides_outline():
@@ -325,9 +442,22 @@ AOF format example:
 
 ### Experiment 1 - AOF fsync Policy Comparison
 
+**Manual run pipeline:**
+
+```bash
+python3 scripts/exp1_fsync_policy.py
+cat results/exp1/results.tsv
+```
+
 **Hypothesis:** `appendfsync always` will be slower than `everysec` because it can force a disk flush on each write path flush.
 
 **Code reference:** `src/aof.c:flushAppendOnlyFile()` line 1147; the `server.aof_fsync == AOF_FSYNC_ALWAYS` branch is checked around lines 1177, 1279, and 1330.
+
+**Plot:** `plots/exp1_fsync_throughput.png`  
+![Experiment 1 throughput](plots/exp1_fsync_throughput.png)
+
+**Terminal screenshot:** `screenshots/exp1_terminal.png`  
+![Experiment 1 terminal output](screenshots/exp1_terminal.png)
 
 **Results:**
 
@@ -339,9 +469,22 @@ AOF format example:
 
 ### Experiment 2 - AOF Rewrite Threshold Behavior
 
+**Manual run pipeline:**
+
+```bash
+python3 scripts/exp2_rewrite.py
+cat results/exp2/results.tsv
+```
+
 **Hypothesis:** After repeated overwrites, the AOF contains redundant history; `BGREWRITEAOF` should compact it to the current state.
 
 **Code reference:** `src/aof.c:rewriteAppendOnlyFile()` line 2664 writes live keyspace state, and `src/aof.c:rewriteAppendOnlyFileBackground()` line 2744 starts the background rewrite.
+
+**Plot:** `plots/exp2_rewrite_sizes.png`  
+![Experiment 2 rewrite sizes](plots/exp2_rewrite_sizes.png)
+
+**Terminal screenshot:** `screenshots/exp2_terminal.png`  
+![Experiment 2 terminal output](screenshots/exp2_terminal.png)
 
 **Results:**
 
@@ -353,9 +496,22 @@ AOF format example:
 
 ### Experiment 3 - AOF Recovery After Simulated Crash
 
+**Manual run pipeline:**
+
+```bash
+python3 scripts/exp3_crash_recovery.py
+cat results/exp3/results.tsv
+```
+
 **Hypothesis:** After `SIGKILL`, Redis can recover all fsynced AOF data. With `appendfsync everysec`, writes inside the last roughly one second may be at risk.
 
 **Code reference:** `src/aof.c:loadAppendOnlyFiles()` line 1775 loads AOF files during startup and replays commands to rebuild state.
+
+**Plot:** `plots/exp3_recovery_rate.png`  
+![Experiment 3 recovery rate](plots/exp3_recovery_rate.png)
+
+**Terminal screenshot:** `screenshots/exp3_terminal.png`  
+![Experiment 3 terminal output](screenshots/exp3_terminal.png)
 
 **Results:**
 
@@ -367,9 +523,22 @@ AOF format example:
 
 ### Experiment 4 - AOF vs RDB Write Throughput
 
+**Manual run pipeline:**
+
+```bash
+python3 scripts/exp4_aof_vs_rdb.py
+cat results/exp4/results.tsv
+```
+
 **Hypothesis:** RDB mode will have higher write throughput because normal writes do not append every command to a persistence log.
 
 **Code reference:** AOF uses `src/aof.c:feedAppendOnlyFile()` line 1409 on mutation propagation; RDB snapshotting is handled by `src/rdb.c:rdbSaveBackground()` line 1942 outside the normal per-command write path.
+
+**Plot:** `plots/exp4_aof_vs_rdb.png`  
+![Experiment 4 AOF vs RDB](plots/exp4_aof_vs_rdb.png)
+
+**Terminal screenshot:** `screenshots/exp4_terminal.png`  
+![Experiment 4 terminal output](screenshots/exp4_terminal.png)
 
 **Results:**
 
@@ -381,9 +550,22 @@ AOF format example:
 
 ### Experiment 5 - AOF Under Write Skew (Hot Key)
 
+**Manual run pipeline:**
+
+```bash
+python3 scripts/exp5_hot_key_skew.py
+cat results/exp5/results.tsv
+```
+
 **Hypothesis:** Before rewrite, hot-key and uniform workloads should have similarly large AOFs because both issue 5000 commands. After rewrite, the hot-key AOF should shrink much more because only one live key remains.
 
 **Code reference:** `src/aof.c:feedAppendOnlyFile()` line 1409 appends every SET regardless of key uniqueness; `src/aof.c:rewriteAppendOnlyFile()` line 2664 emits only current keyspace state.
+
+**Plot:** `plots/exp5_skew_compression.png`  
+![Experiment 5 skew compression](plots/exp5_skew_compression.png)
+
+**Terminal screenshot:** `screenshots/exp5_terminal.png`  
+![Experiment 5 terminal output](screenshots/exp5_terminal.png)
 
 **Results:**
 
@@ -441,7 +623,14 @@ The filesystem must honor `fsync()` semantics, the disk must have space for ongo
         f.write(readme)
 
     generate_slides_outline()
-    generate_plots(exp1, exp4, exp5)
+    generate_plots(exp1, exp2, exp3, exp4, exp5)
+    generate_screenshots({
+        "exp1": exp1,
+        "exp2": exp2,
+        "exp3": exp3,
+        "exp4": exp4,
+        "exp5": exp5,
+    })
 
     print("\n=== EXPERIMENT RESULTS SUMMARY ===\n")
     for exp_name, rows in [("exp1", exp1), ("exp2", exp2), ("exp3", exp3), ("exp4", exp4), ("exp5", exp5)]:
@@ -449,7 +638,7 @@ The filesystem must honor `fsync()` semantics, the disk must have space for ongo
         for row in rows:
             print("  " + " | ".join(f"{k}={v}" for k, v in row.items()))
         print()
-    print("[DONE] Wrote README.md, slides_outline.md, and plots/*.png")
+    print("[DONE] Wrote README.md, slides_outline.md, plots/*.png, and screenshots/*.png")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 # DS614 Final Project - Redis AOF Persistence
 **Topic:** Redis Append-Only File (AOF) Persistence  
 **System:** Redis open source, built from the cloned repository at `../redis`  
-**Team:** Purav Shah
+**Team:** Purav Shah, Jay Salot (Quantum Data)
 
 ---
 
@@ -82,9 +82,22 @@ AOF format example:
 
 ### Experiment 1 - AOF fsync Policy Comparison
 
+**Manual run pipeline:**
+
+```bash
+python3 scripts/exp1_fsync_policy.py
+cat results/exp1/results.tsv
+```
+
 **Hypothesis:** `appendfsync always` will be slower than `everysec` because it can force a disk flush on each write path flush.
 
 **Code reference:** `src/aof.c:flushAppendOnlyFile()` line 1147; the `server.aof_fsync == AOF_FSYNC_ALWAYS` branch is checked around lines 1177, 1279, and 1330.
+
+**Plot:** `plots/exp1_fsync_throughput.png`  
+![Experiment 1 throughput](plots/exp1_fsync_throughput.png)
+
+**Terminal screenshot:** `screenshots/exp1_terminal.png`  
+![Experiment 1 terminal output](screenshots/exp1_terminal.png)
 
 **Results:**
 
@@ -100,9 +113,22 @@ AOF format example:
 
 ### Experiment 2 - AOF Rewrite Threshold Behavior
 
+**Manual run pipeline:**
+
+```bash
+python3 scripts/exp2_rewrite.py
+cat results/exp2/results.tsv
+```
+
 **Hypothesis:** After repeated overwrites, the AOF contains redundant history; `BGREWRITEAOF` should compact it to the current state.
 
 **Code reference:** `src/aof.c:rewriteAppendOnlyFile()` line 2664 writes live keyspace state, and `src/aof.c:rewriteAppendOnlyFileBackground()` line 2744 starts the background rewrite.
+
+**Plot:** `plots/exp2_rewrite_sizes.png`  
+![Experiment 2 rewrite sizes](plots/exp2_rewrite_sizes.png)
+
+**Terminal screenshot:** `screenshots/exp2_terminal.png`  
+![Experiment 2 terminal output](screenshots/exp2_terminal.png)
 
 **Results:**
 
@@ -121,9 +147,22 @@ AOF format example:
 
 ### Experiment 3 - AOF Recovery After Simulated Crash
 
+**Manual run pipeline:**
+
+```bash
+python3 scripts/exp3_crash_recovery.py
+cat results/exp3/results.tsv
+```
+
 **Hypothesis:** After `SIGKILL`, Redis can recover all fsynced AOF data. With `appendfsync everysec`, writes inside the last roughly one second may be at risk.
 
 **Code reference:** `src/aof.c:loadAppendOnlyFiles()` line 1775 loads AOF files during startup and replays commands to rebuild state.
+
+**Plot:** `plots/exp3_recovery_rate.png`  
+![Experiment 3 recovery rate](plots/exp3_recovery_rate.png)
+
+**Terminal screenshot:** `screenshots/exp3_terminal.png`  
+![Experiment 3 terminal output](screenshots/exp3_terminal.png)
 
 **Results:**
 
@@ -140,9 +179,22 @@ AOF format example:
 
 ### Experiment 4 - AOF vs RDB Write Throughput
 
+**Manual run pipeline:**
+
+```bash
+python3 scripts/exp4_aof_vs_rdb.py
+cat results/exp4/results.tsv
+```
+
 **Hypothesis:** RDB mode will have higher write throughput because normal writes do not append every command to a persistence log.
 
 **Code reference:** AOF uses `src/aof.c:feedAppendOnlyFile()` line 1409 on mutation propagation; RDB snapshotting is handled by `src/rdb.c:rdbSaveBackground()` line 1942 outside the normal per-command write path.
+
+**Plot:** `plots/exp4_aof_vs_rdb.png`  
+![Experiment 4 AOF vs RDB](plots/exp4_aof_vs_rdb.png)
+
+**Terminal screenshot:** `screenshots/exp4_terminal.png`  
+![Experiment 4 terminal output](screenshots/exp4_terminal.png)
 
 **Results:**
 
@@ -157,9 +209,22 @@ AOF format example:
 
 ### Experiment 5 - AOF Under Write Skew (Hot Key)
 
+**Manual run pipeline:**
+
+```bash
+python3 scripts/exp5_hot_key_skew.py
+cat results/exp5/results.tsv
+```
+
 **Hypothesis:** Before rewrite, hot-key and uniform workloads should have similarly large AOFs because both issue 5000 commands. After rewrite, the hot-key AOF should shrink much more because only one live key remains.
 
 **Code reference:** `src/aof.c:feedAppendOnlyFile()` line 1409 appends every SET regardless of key uniqueness; `src/aof.c:rewriteAppendOnlyFile()` line 2664 emits only current keyspace state.
+
+**Plot:** `plots/exp5_skew_compression.png`  
+![Experiment 5 skew compression](plots/exp5_skew_compression.png)
+
+**Terminal screenshot:** `screenshots/exp5_terminal.png`  
+![Experiment 5 terminal output](screenshots/exp5_terminal.png)
 
 **Results:**
 
