@@ -1,0 +1,2 @@
+label	n_keys	recovered	lost	wrong_value	recovery_rate_pct
+crash_recovery	2000	2000	0	0	100.0

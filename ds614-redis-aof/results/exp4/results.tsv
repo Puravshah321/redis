@@ -1,0 +1,7 @@
+label	n_writes	elapsed_sec	ops_per_sec
+AOF_everysec	1000	0.004	249765.02
+AOF_everysec	5000	0.0166	301379.9
+AOF_everysec	10000	0.032	312234.17
+RDB_snapshot	1000	0.0039	257572.1
+RDB_snapshot	5000	0.0137	365905.71
+RDB_snapshot	10000	0.0263	380525.48

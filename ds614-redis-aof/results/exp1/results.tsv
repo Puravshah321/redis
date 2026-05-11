@@ -1,0 +1,4 @@
+label	n_writes	elapsed_sec	ops_per_sec	aof_size_bytes
+always	5000	0.0664	75304.39	518019
+everysec	5000	0.0159	313480.32	528023
+no	5000	0.0145	344705.21	498001

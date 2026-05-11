@@ -1,0 +1,3 @@
+label	n_writes	is_hot_key	size_before_bytes	size_after_bytes	compression_ratio
+uniform	5000	False	668005	202973	3.29
+hot_key	5000	True	639115	227	2815.48

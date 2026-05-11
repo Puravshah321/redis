@@ -1,0 +1,2 @@
+label	n_keys	n_overwrites	size_after_initial_bytes	size_before_rewrite_bytes	size_after_rewrite_bytes	compression_ratio
+rewrite_experiment	1000	5	152005	930905	42973	21.66
