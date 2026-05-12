@@ -1,7 +1,8 @@
 # DS614 Final Project - Redis AOF Persistence
 **Topic:** Redis Append-Only File (AOF) Persistence  
 **System:** Redis open source, built from the cloned repository at `../redis`  
-**Team:** Purav Shah
+**Team:** Purav Shah, Jay Salot (Quantum Data)
+
 
 ---
 
